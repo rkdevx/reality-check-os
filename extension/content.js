@@ -1,5 +1,8 @@
 console.log("🧠 RealityCheck OS Loaded");
 
+const scannedElements = new WeakSet(); // 🧠 Avoid duplicate scans
+
+// ✅ Manual selection
 document.addEventListener("mouseup", async () => {
   const selectedText = window.getSelection().toString().trim();
 
@@ -23,7 +26,7 @@ document.addEventListener("mouseup", async () => {
   }
 });
 
-// ✅ Overlay popup on manual selection
+// ✅ Overlay for manual selection
 function showOverlay(score, verdict, reasons = [], originalText = "") {
   const existing = document.getElementById("realitycheck-overlay");
   if (existing) existing.remove();
@@ -71,17 +74,20 @@ function saveClaimToHistory(text, score, verdict, reasons) {
     const history = result.realitycheck_history || [];
     history.push(newEntry);
     chrome.storage.local.set({ realitycheck_history: history }, () => {
-      console.log("💾 Saved to history:", newEntry);
+      console.log("💾 Claim saved:", newEntry);
     });
   });
 }
 
-// ✅ Full Page Scanner
+// ✅ Page-wide scan
 async function scanPage() {
   const elements = Array.from(document.querySelectorAll("p, li, blockquote"));
   const textChunks = [];
 
   for (const el of elements) {
+    if (scannedElements.has(el)) continue; // skip already scanned
+    scannedElements.add(el);
+
     const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
     for (const sentence of sentences) {
       textChunks.push({ sentence, el });
@@ -110,7 +116,31 @@ async function scanPage() {
   console.log("✅ Page scan complete");
 }
 
-// ✅ Highlight low-score sentences in red
+// ✅ Single element scan (for MutationObserver)
+function scanElement(el) {
+  if (scannedElements.has(el)) return;
+  scannedElements.add(el);
+
+  const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
+  sentences.forEach(async sentence => {
+    try {
+      const res = await fetch("http://localhost:8000/api/analyze/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sentence })
+      });
+
+      const data = await res.json();
+      if (data.score < 0.5) {
+        highlightSentence(el, sentence, data);
+      }
+    } catch (err) {
+      console.error("👁️ Live scan error:", err);
+    }
+  });
+}
+
+// ✅ Highlight logic
 function highlightSentence(element, sentence, data) {
   const cleanText = sentence.trim();
   const lowerText = cleanText.toLowerCase();
@@ -132,12 +162,10 @@ function highlightSentence(element, sentence, data) {
   if (newHTML !== html) {
     element.innerHTML = newHTML;
     console.log("🔴 Highlighted:", cleanText);
-  } else {
-    console.warn("⚠️ Replace failed for:", cleanText);
   }
 }
 
-// ✅ Highlight styling
+// ✅ Inject styles
 const style = document.createElement("style");
 style.innerHTML = `
   mark.rc-low-score {
@@ -150,36 +178,14 @@ style.innerHTML = `
 `;
 document.head.appendChild(style);
 
-// ✅ Auto-scan after load
-window.addEventListener("DOMContentLoaded", () => {
-  setTimeout(() => {
-    scanPage();
-    observeNewContent(); // 🔁 starts live monitoring
-  }, 1500);
-});
-
-// ✅ Background click triggers scan
-window.addEventListener("triggerScanFromBackground", () => {
-  console.log("🔁 Scan triggered by extension icon");
-  scanPage();
-});
-
-
-const scannedElements = new WeakSet();
-
+// ✅ Observe new dynamic content
 function observeNewContent() {
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
-          // Only scan paragraph-like nodes
           const newElements = node.querySelectorAll?.("p, li, blockquote") || [];
-          newElements.forEach(el => {
-            if (!scannedElements.has(el)) {
-              scanElement(el);
-              scannedElements.add(el);
-            }
-          });
+          newElements.forEach(scanElement);
         }
       }
     }
@@ -193,21 +199,16 @@ function observeNewContent() {
   console.log("👁️ MutationObserver started");
 }
 
-function scanElement(el) {
-  const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
-  sentences.forEach(async sentence => {
-    try {
-      const res = await fetch("http://localhost:8000/api/analyze/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sentence })
-      });
-      const data = await res.json();
-      if (data.score < 0.5) {
-        highlightSentence(el, sentence, data);
-      }
-    } catch (err) {
-      console.error("👁️ Live scan error:", err);
-    }
-  });
-}
+// ✅ Start everything after DOM loads
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    scanPage();
+    observeNewContent();
+  }, 1000);
+});
+
+// ✅ Support extension icon click
+window.addEventListener("triggerScanFromBackground", () => {
+  console.log("🔁 Scan triggered by extension icon");
+  scanPage();
+});
