@@ -152,7 +152,10 @@ document.head.appendChild(style);
 
 // ✅ Auto-scan after load
 window.addEventListener("DOMContentLoaded", () => {
-  setTimeout(scanPage, 1500); // allow page content to load
+  setTimeout(() => {
+    scanPage();
+    observeNewContent(); // 🔁 starts live monitoring
+  }, 1500);
 });
 
 // ✅ Background click triggers scan
@@ -160,3 +163,51 @@ window.addEventListener("triggerScanFromBackground", () => {
   console.log("🔁 Scan triggered by extension icon");
   scanPage();
 });
+
+
+const scannedElements = new WeakSet();
+
+function observeNewContent() {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) {
+          // Only scan paragraph-like nodes
+          const newElements = node.querySelectorAll?.("p, li, blockquote") || [];
+          newElements.forEach(el => {
+            if (!scannedElements.has(el)) {
+              scanElement(el);
+              scannedElements.add(el);
+            }
+          });
+        }
+      }
+    }
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  console.log("👁️ MutationObserver started");
+}
+
+function scanElement(el) {
+  const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
+  sentences.forEach(async sentence => {
+    try {
+      const res = await fetch("http://localhost:8000/api/analyze/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sentence })
+      });
+      const data = await res.json();
+      if (data.score < 0.5) {
+        highlightSentence(el, sentence, data);
+      }
+    } catch (err) {
+      console.error("👁️ Live scan error:", err);
+    }
+  });
+}
