@@ -1,9 +1,11 @@
+console.log("🧠 RealityCheck OS Loaded");
+
 document.addEventListener("mouseup", async () => {
   const selectedText = window.getSelection().toString().trim();
 
   if (selectedText.length < 10 || selectedText.length > 500) return;
 
-  console.log("Selected:", selectedText);
+  console.log("📌 Selected:", selectedText);
 
   try {
     const res = await fetch("http://localhost:8000/api/analyze/", {
@@ -13,16 +15,15 @@ document.addEventListener("mouseup", async () => {
     });
 
     const data = await res.json();
-    console.log("Backend response:", data);
+    console.log("📬 Backend response:", data);
 
-    // ✅ Pass original selected text for history
     showOverlay(data.score, data.verdict, data.reasons, selectedText);
   } catch (err) {
     console.error("❌ Extension fetch error:", err);
   }
 });
 
-
+// ✅ Overlay popup on manual selection
 function showOverlay(score, verdict, reasons = [], originalText = "") {
   const existing = document.getElementById("realitycheck-overlay");
   if (existing) existing.remove();
@@ -58,9 +59,10 @@ function showOverlay(score, verdict, reasons = [], originalText = "") {
   document.body.appendChild(overlay);
   setTimeout(() => overlay.remove(), 7000);
 
-  // 🔽 Save the result in history
   saveClaimToHistory(originalText, score, verdict, reasons);
 }
+
+// ✅ Save to chrome.storage
 function saveClaimToHistory(text, score, verdict, reasons) {
   const timestamp = new Date().toLocaleString();
   const newEntry = { text, score, verdict, reasons, timestamp };
@@ -69,22 +71,24 @@ function saveClaimToHistory(text, score, verdict, reasons) {
     const history = result.realitycheck_history || [];
     history.push(newEntry);
     chrome.storage.local.set({ realitycheck_history: history }, () => {
-      console.log("✅ Claim saved (via chrome.storage):", newEntry);
+      console.log("💾 Saved to history:", newEntry);
     });
   });
 }
 
-
+// ✅ Full Page Scanner
 async function scanPage() {
-  const paragraphs = Array.from(document.querySelectorAll("p, li, blockquote"));
+  const elements = Array.from(document.querySelectorAll("p, li, blockquote"));
   const textChunks = [];
 
-  for (const el of paragraphs) {
+  for (const el of elements) {
     const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
     for (const sentence of sentences) {
       textChunks.push({ sentence, el });
     }
   }
+
+  console.log(`🔍 Scanning ${textChunks.length} sentences...`);
 
   for (const { sentence, el } of textChunks) {
     try {
@@ -106,30 +110,34 @@ async function scanPage() {
   console.log("✅ Page scan complete");
 }
 
-
+// ✅ Highlight low-score sentences in red
 function highlightSentence(element, sentence, data) {
   const cleanText = sentence.trim();
+  const lowerText = cleanText.toLowerCase();
+  const html = element.innerHTML;
 
-  if (!element.innerText.includes(cleanText)) {
-    console.warn("🟡 Not found in DOM:", cleanText);
+  if (!element.innerText.toLowerCase().includes(lowerText)) {
+    console.warn("🟡 Not found in textContent:", cleanText);
     return;
   }
 
-  const safeSentence = cleanText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(safeSentence, "i");
+  const escaped = cleanText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, "i");
 
-  const newHTML = element.innerHTML.replace(
+  const newHTML = html.replace(
     regex,
     `<mark class="rc-low-score" title="${data.verdict} (${Math.round(data.score * 100)}%) - ${data.reasons[0] || ''}">$&</mark>`
   );
 
-  if (newHTML !== element.innerHTML) {
+  if (newHTML !== html) {
     element.innerHTML = newHTML;
     console.log("🔴 Highlighted:", cleanText);
+  } else {
+    console.warn("⚠️ Replace failed for:", cleanText);
   }
 }
 
-
+// ✅ Highlight styling
 const style = document.createElement("style");
 style.innerHTML = `
   mark.rc-low-score {
@@ -142,11 +150,12 @@ style.innerHTML = `
 `;
 document.head.appendChild(style);
 
-window.addEventListener("load", () => {
-  setTimeout(scanPage, 1000); // slight delay after DOM ready
+// ✅ Auto-scan after load
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(scanPage, 1500); // allow page content to load
 });
 
-
+// ✅ Background click triggers scan
 window.addEventListener("triggerScanFromBackground", () => {
   console.log("🔁 Scan triggered by extension icon");
   scanPage();
