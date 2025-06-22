@@ -143,29 +143,62 @@ function scanElement(el) {
 // ✅ Highlight logic
 function highlightSentence(element, sentence, data) {
   const cleanText = sentence.trim();
-  const lowerText = cleanText.toLowerCase();
-  const html = element.innerHTML;
+  const innerText = element.innerText;
 
-  if (!element.innerText.toLowerCase().includes(lowerText)) {
-    console.warn("🟡 Not found in textContent:", cleanText);
+  if (!innerText.includes(cleanText)) {
+    console.warn("🟡 Not found in element text:", cleanText);
     return;
   }
 
-  const escaped = cleanText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(escaped, "i");
-
-  const newHTML = html.replace(
-    regex,
-    `<mark class="rc-low-score" title="${data.verdict} (${Math.round(data.score * 100)}%) - ${data.reasons[0] || ''}">$&</mark>`
-  );
-
-  if (newHTML !== html) {
-    element.innerHTML = newHTML;
-    console.log("🔴 Highlighted:", cleanText);
+  const range = findRangeInElement(element, cleanText);
+  if (!range) {
+    console.warn("⚠️ Range not found for:", cleanText);
+    return;
   }
+
+  const mark = document.createElement("mark");
+  mark.className = "rc-low-score";
+  mark.title = `${data.verdict} (${Math.round(data.score * 100)}%) - ${data.reasons[0] || ""}`;
+  mark.style.backgroundColor = "rgba(255,0,0,0.2)";
+  mark.style.borderRadius = "4px";
+  mark.style.padding = "2px 4px";
+
+  range.surroundContents(mark);
+  console.log("🔴 Highlighted with range:", cleanText);
 }
 
-// ✅ Inject styles
+// 🧠 Utility to get a range even if split across tags
+function findRangeInElement(el, targetText) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let startNode = null, endNode = null;
+  let charIndex = 0, startOffset = 0, endOffset = 0;
+  let found = false;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.textContent;
+
+    const index = text.indexOf(targetText);
+    if (index !== -1) {
+      startNode = node;
+      endNode = node;
+      startOffset = index;
+      endOffset = index + targetText.length;
+      found = true;
+      break;
+    }
+
+    charIndex += text.length;
+  }
+
+  if (!found) return null;
+
+  const range = document.createRange();
+  range.setStart(startNode, startOffset);
+  range.setEnd(endNode, endOffset);
+  return range;
+}
+
 const style = document.createElement("style");
 style.innerHTML = `
   mark.rc-low-score {
@@ -176,6 +209,7 @@ style.innerHTML = `
     cursor: help;
   }
 `;
+document.head.appendChild(style);
 document.head.appendChild(style);
 
 // ✅ Observe new dynamic content
