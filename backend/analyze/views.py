@@ -19,9 +19,12 @@ model_path = os.path.join(BASE_DIR, "ml/veracity_model.pkl")
 vectorizer = joblib.load(vec_path)
 model = joblib.load(model_path)
 
+
+
+# ✅ Already existing function (keep it as is)
 @ratelimit(key='ip', rate='10/m', block=True)
 @api_view(['POST'])
-def analyze_claim(request):
+def analyze_text(request):
     text = request.data.get("text", "")
     fingerprint = hashlib.sha256(text.encode()).hexdigest()[:10]
 
@@ -30,6 +33,9 @@ def analyze_claim(request):
     nlp_boosted, reasons = heuristic_nlp_score(text)
 
     final_score = round(0.7 * ml_score + 0.3 * nlp_boosted, 3)
+
+    # Save to log
+    RealityCheckLog.objects.create(text=text, score=final_score, verdict="Factual" if final_score > 0.6 else "Possibly Manipulative")
 
     return Response({
         "text": text,
@@ -41,29 +47,8 @@ def analyze_claim(request):
         "fingerprint": fingerprint
     })
 
-
-
-
-# ✅ Already existing function (keep it as is)
-@ratelimit(key='ip', rate='10/m', block=True)
-@api_view(['POST'])
-def analyze_text(request):
-    text = request.data.get("text", "")
-    score = 0.42  # your logic
-    verdict = "Possibly Manipulative"  # your logic
-    reasons = ["Clickbait", "Numeric Claim"]  # your logic
-
-    # Save to log
-    RealityCheckLog.objects.create(text=text, score=score, verdict=verdict)
-
-    return Response({
-        "text": text,
-        "score": score,
-        "verdict": verdict,
-        "reasons": reasons
-    })
-
 # ✅ Bulk analyze
+@ratelimit(key='ip', rate='5/m', block=True)
 @api_view(['POST'])
 def analyze_bulk(request):
     texts = request.data.get("texts", [])
@@ -86,6 +71,7 @@ def analyze_bulk(request):
     return Response({"results": results})
 
 # ✅ Fetch latest history
+@ratelimit(key='ip', rate='5/m', block=True)
 @api_view(['GET'])
 def get_history(request):
     logs = RealityCheckLog.objects.all().order_by('-timestamp')[:50]
@@ -93,6 +79,7 @@ def get_history(request):
     return Response(serializer.data)
 
 # ✅ User feedback
+@ratelimit(key='ip', rate='5/m', block=True)
 @api_view(['POST'])
 def submit_feedback(request):
     serializer = FeedbackSerializer(data=request.data)
@@ -102,6 +89,7 @@ def submit_feedback(request):
     return Response(serializer.errors, status=400)
 
 # ✅ Health check
+@ratelimit(key='ip', rate='5/m', block=True)
 @api_view(['GET'])
 def health_check(request):
     return Response({"status": "OK"})
