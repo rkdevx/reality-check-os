@@ -1,0 +1,46 @@
+body {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  padding: 10px;
+  width: 350px;
+  background: #f8f8f8;
+}
+
+h2 {
+  margin-bottom: 10px;
+}
+
+#history {
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  padding: 10px;
+  border-radius: 6px;
+  box-shadow: 0 0 4px rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+}
+
+.claim {
+  margin-bottom: 10px;
+  padding: 8px;
+  border-left: 4px solid #007acc;
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.claim .score {
+  font-weight: bold;
+}
+
+button {
+  background: #ff4d4d;
+  color: white;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #e60000;
+}
