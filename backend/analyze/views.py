@@ -4,6 +4,12 @@ import hashlib
 import joblib
 import os
 from .ml.nlp_score import heuristic_nlp_score
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import RealityCheckLog, Feedback
+from .serializers import LogSerializer, FeedbackSerializer
+from django_ratelimit.decorators import ratelimit
+
 
 # Load models once
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +19,7 @@ model_path = os.path.join(BASE_DIR, "ml/veracity_model.pkl")
 vectorizer = joblib.load(vec_path)
 model = joblib.load(model_path)
 
-
+@ratelimit(key='ip', rate='10/m', block=True)
 @api_view(['POST'])
 def analyze_claim(request):
     text = request.data.get("text", "")
@@ -34,4 +40,69 @@ def analyze_claim(request):
         "reasons": reasons,
         "fingerprint": fingerprint
     })
+
+
+
+
+# ✅ Already existing function (keep it as is)
+@ratelimit(key='ip', rate='10/m', block=True)
+@api_view(['POST'])
+def analyze_text(request):
+    text = request.data.get("text", "")
+    score = 0.42  # your logic
+    verdict = "Possibly Manipulative"  # your logic
+    reasons = ["Clickbait", "Numeric Claim"]  # your logic
+
+    # Save to log
+    RealityCheckLog.objects.create(text=text, score=score, verdict=verdict)
+
+    return Response({
+        "text": text,
+        "score": score,
+        "verdict": verdict,
+        "reasons": reasons
+    })
+
+# ✅ Bulk analyze
+@api_view(['POST'])
+def analyze_bulk(request):
+    texts = request.data.get("texts", [])
+    results = []
+
+    for text in texts:
+        score = 0.42  # run your model
+        verdict = "Possibly Manipulative"
+        reasons = ["Clickbait", "Sensational"]
+
+        RealityCheckLog.objects.create(text=text, score=score, verdict=verdict)
+
+        results.append({
+            "text": text,
+            "score": score,
+            "verdict": verdict,
+            "reasons": reasons
+        })
+
+    return Response({"results": results})
+
+# ✅ Fetch latest history
+@api_view(['GET'])
+def get_history(request):
+    logs = RealityCheckLog.objects.all().order_by('-timestamp')[:50]
+    serializer = LogSerializer(logs, many=True)
+    return Response(serializer.data)
+
+# ✅ User feedback
+@api_view(['POST'])
+def submit_feedback(request):
+    serializer = FeedbackSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"msg": "Thanks for your feedback!"})
+    return Response(serializer.errors, status=400)
+
+# ✅ Health check
+@api_view(['GET'])
+def health_check(request):
+    return Response({"status": "OK"})
 

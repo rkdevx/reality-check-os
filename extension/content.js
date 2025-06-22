@@ -1,6 +1,6 @@
 console.log("🧠 RealityCheck OS Loaded");
 
-const scannedElements = new WeakSet(); // 🧠 Avoid duplicate scans
+const scannedElements = new WeakSet();
 
 // ✅ Manual selection
 document.addEventListener("mouseup", async () => {
@@ -26,7 +26,7 @@ document.addEventListener("mouseup", async () => {
   }
 });
 
-// ✅ Overlay for manual selection
+// ✅ Overlay for manual check
 function showOverlay(score, verdict, reasons = [], originalText = "") {
   const existing = document.getElementById("realitycheck-overlay");
   if (existing) existing.remove();
@@ -65,7 +65,7 @@ function showOverlay(score, verdict, reasons = [], originalText = "") {
   saveClaimToHistory(originalText, score, verdict, reasons);
 }
 
-// ✅ Save to chrome.storage
+// ✅ Save history in chrome storage
 function saveClaimToHistory(text, score, verdict, reasons) {
   const timestamp = new Date().toLocaleString();
   const newEntry = { text, score, verdict, reasons, timestamp };
@@ -74,85 +74,49 @@ function saveClaimToHistory(text, score, verdict, reasons) {
     const history = result.realitycheck_history || [];
     history.push(newEntry);
     chrome.storage.local.set({ realitycheck_history: history }, () => {
-      console.log("💾 Claim saved:", newEntry);
+      console.log("💾 Saved to history:", newEntry);
     });
   });
 }
 
-// ✅ Page-wide scan
+// ✅ Full page scan on load
 async function scanPage() {
   const elements = Array.from(document.querySelectorAll("p, li, blockquote"));
-  const textChunks = [];
 
   for (const el of elements) {
-    if (scannedElements.has(el)) continue; // skip already scanned
+    if (scannedElements.has(el)) continue;
     scannedElements.add(el);
 
     const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
     for (const sentence of sentences) {
-      textChunks.push({ sentence, el });
-    }
-  }
+      try {
+        const res = await fetch("http://localhost:8000/api/analyze/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: sentence })
+        });
 
-  console.log(`🔍 Scanning ${textChunks.length} sentences...`);
-
-  for (const { sentence, el } of textChunks) {
-    try {
-      const res = await fetch("http://localhost:8000/api/analyze/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sentence })
-      });
-
-      const data = await res.json();
-      if (data.score < 0.5) {
-        highlightSentence(el, sentence, data);
+        const data = await res.json();
+        if (data.score < 0.5) {
+          highlightSentence(el, sentence, data);
+        }
+      } catch (err) {
+        console.error("Scan error:", err);
       }
-    } catch (err) {
-      console.error("Auto-scan error:", err);
     }
   }
 
   console.log("✅ Page scan complete");
+  console.log("📊 Sentence:", sentence, "| Score:", data.score);
 }
 
-// ✅ Single element scan (for MutationObserver)
-function scanElement(el) {
-  if (scannedElements.has(el)) return;
-  scannedElements.add(el);
-
-  const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
-  sentences.forEach(async sentence => {
-    try {
-      const res = await fetch("http://localhost:8000/api/analyze/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sentence })
-      });
-
-      const data = await res.json();
-      if (data.score < 0.5) {
-        highlightSentence(el, sentence, data);
-      }
-    } catch (err) {
-      console.error("👁️ Live scan error:", err);
-    }
-  });
-}
-
-// ✅ Highlight logic
+// ✅ Highlight sentence using Range API
 function highlightSentence(element, sentence, data) {
   const cleanText = sentence.trim();
-  const innerText = element.innerText;
-
-  if (!innerText.includes(cleanText)) {
-    console.warn("🟡 Not found in element text:", cleanText);
-    return;
-  }
-
   const range = findRangeInElement(element, cleanText);
+
   if (!range) {
-    console.warn("⚠️ Range not found for:", cleanText);
+    console.warn("⚠️ Could not find range for:", cleanText);
     return;
   }
 
@@ -163,42 +127,36 @@ function highlightSentence(element, sentence, data) {
   mark.style.borderRadius = "4px";
   mark.style.padding = "2px 4px";
 
-  range.surroundContents(mark);
-  console.log("🔴 Highlighted with range:", cleanText);
+  try {
+    range.surroundContents(mark);
+    console.log("🔴 Highlighted with Range:", cleanText);
+  } catch (e) {
+    console.warn("⛔ Failed to highlight (bad structure):", cleanText, e);
+  }
 }
 
-// 🧠 Utility to get a range even if split across tags
+// ✅ Find range even if text spans multiple tags
 function findRangeInElement(el, targetText) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let startNode = null, endNode = null;
-  let charIndex = 0, startOffset = 0, endOffset = 0;
-  let found = false;
+  let node;
 
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const text = node.textContent;
-
-    const index = text.indexOf(targetText);
-    if (index !== -1) {
-      startNode = node;
-      endNode = node;
-      startOffset = index;
-      endOffset = index + targetText.length;
-      found = true;
-      break;
+  while ((node = walker.nextNode())) {
+    if (node.textContent.includes(targetText)) {
+      console.log("✅ Found match in node:", node.textContent);
+      const index = node.textContent.indexOf(targetText);
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + targetText.length);
+      return range;
     }
-
-    charIndex += text.length;
   }
 
-  if (!found) return null;
-
-  const range = document.createRange();
-  range.setStart(startNode, startOffset);
-  range.setEnd(endNode, endOffset);
-  return range;
+  console.warn("❌ Could not match text in DOM:", targetText);
+  return null;
 }
 
+
+// ✅ Inject highlight style
 const style = document.createElement("style");
 style.innerHTML = `
   mark.rc-low-score {
@@ -210,9 +168,8 @@ style.innerHTML = `
   }
 `;
 document.head.appendChild(style);
-document.head.appendChild(style);
 
-// ✅ Observe new dynamic content
+// ✅ Auto scan new dynamic content
 function observeNewContent() {
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -233,7 +190,32 @@ function observeNewContent() {
   console.log("👁️ MutationObserver started");
 }
 
-// ✅ Start everything after DOM loads
+// ✅ Scan newly added element
+function scanElement(el) {
+  if (scannedElements.has(el)) return;
+  scannedElements.add(el);
+
+  const sentences = el.innerText.split(/[.?!]\s/).filter(s => s.length > 10);
+  sentences.forEach(async sentence => {
+    try {
+      const res = await fetch("http://localhost:8000/api/analyze/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sentence })
+      });
+
+      const data = await res.json();
+      if (data.score < 0.5) {
+        highlightSentence(el, sentence, data);
+      }
+    } catch (err) {
+      console.error("👁️ Live scan error:", err);
+    }
+    console.log("📊 Sentence:", sentence, "| Score:", data.score);
+  });
+}
+
+// ✅ Initial trigger after DOM ready
 window.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => {
     scanPage();
@@ -241,8 +223,8 @@ window.addEventListener("DOMContentLoaded", () => {
   }, 1000);
 });
 
-// ✅ Support extension icon click
+// ✅ Triggered by background
 window.addEventListener("triggerScanFromBackground", () => {
-  console.log("🔁 Scan triggered by extension icon");
+  console.log("🔁 Manual scan triggered");
   scanPage();
 });
