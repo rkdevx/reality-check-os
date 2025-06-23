@@ -13,6 +13,7 @@ from google.auth.transport import requests
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
+from rest_framework.permissions import IsAdminUser
 
 
 # Load models once
@@ -146,3 +147,15 @@ def google_login(request):
 def health_check(request):
     return Response({"status": "OK"})
 
+
+
+@api_view(['POST'])
+def ingest_claims(request):
+    claims = request.data.get("claims", [])
+    for claim in claims:
+        RealityCheckLog.objects.create(
+            text=claim['claim_text'],
+            score=0.5, 
+            verdict="Unverified" 
+        )
+    return Response({"msg": f"{len(claims)} claims ingested"})

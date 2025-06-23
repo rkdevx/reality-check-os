@@ -2,7 +2,6 @@ console.log("🧠 RealityCheck OS Loaded");
 
 const scannedElements = new WeakSet();
 
-// ✅ Manual selection
 document.addEventListener("mouseup", async () => {
   const selectedText = window.getSelection().toString().trim();
 
@@ -26,7 +25,7 @@ document.addEventListener("mouseup", async () => {
   }
 });
 
-// ✅ Overlay for manual check
+
 function showOverlay(score, verdict, reasons = [], originalText = "") {
   const existing = document.getElementById("realitycheck-overlay");
   if (existing) existing.remove();
